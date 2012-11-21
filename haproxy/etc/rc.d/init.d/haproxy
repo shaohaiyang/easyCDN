@@ -1,0 +1,167 @@
+#!/bin/sh
+#
+# chkconfig: - 60 60 
+# description: HA-Proxy is a TCP/HTTP reverse proxy which is particularly suited \
+#              for high availability environments.
+# processname: haproxy
+# config: /opt/haproxy/etc/haproxy.cfg
+# pidfile: /var/run/haproxy.pid
+
+# Script Author: Simon Matter <simon.matter@invoca.ch>
+# Version: 2004060600
+
+# Copyright by Shaohaiyang at 53kf inc.
+# Contact email: shaohaiyang@gmail.com
+# added by geminis 2010/11/05
+[ -s /etc/53kf.cfg ] && source /etc/53kf.cfg
+
+# Source function library
+. /etc/rc.d/init.d/functions
+
+# Source networking configuration.
+. /etc/sysconfig/network
+
+ulimit -S -c 0
+ulimit -n 65535
+ulimit -f unlimited
+ulimit -u unlimited
+
+# Check that networking is up.
+[ ${NETWORKING} = "no" ] && exit 0
+
+# This is our service name
+BASENAME="haproxy"
+CONFIG="/opt/haproxy/etc/haproxy.cfg"
+COMMAND="/opt/haproxy/sbin/haproxy"
+
+[ -f $CONFIG ] || exit 1
+
+config() {
+# modify by geminis
+if [ -z $HAPROXY_DAEMON ];then
+	NUM=`grep -c processor /proc/cpuinfo`	
+	HAPROXY_DAEMON=$(($NUM*1))
+fi
+[ -z $HAPROXY_MAXCONN ] && HAPROXY_MAXCONN=$(($HAPROXY_DAEMON*5000))
+
+sed -r -i "/nbproc/s#.*#\tnbproc $HAPROXY_DAEMON#g" $CONFIG
+sed -r -i "/\tmaxconn/s#.*#\tmaxconn $HAPROXY_MAXCONN#g" $CONFIG
+
+RETVAL=0
+
+sed -r -i "/acl_rule/d" $CONFIG
+STRING=""
+for i in $PROXY_HOST;do
+        echo "$i" |grep -q ^#
+        [ $? = 0 ] && continue
+
+	HOST=`echo $i|cut -d@ -f1`
+	SRV=`echo $i|cut -d@ -f2`
+        NAME=`echo $i|cut -d@ -f3`
+
+	SRV_POOL=`echo $SRV|sed 's:&: :g'`
+
+	STR=""
+	j=0
+	for i in $SRV_POOL;do
+		((j++))
+		WEIGHT=`echo $i|awk -F: '{print $3}'`
+		[ -z $WEIGHT ] && WEIGHT=3
+		#STR=$STR"\tserver ${NAME}_$j $i cookie ${NAME}_$j maxconn 10000 weight $WEIGHT check inter 5s fastinter 1s downinter 5s rise 2 fall 5 \t#acl_rule\n"
+		STR=$STR"\tserver ${NAME}_$j $i cookie ${NAME}_$j maxconn 30000 weight $WEIGHT \t#acl_rule\n"
+	done
+
+	STRING=${STRING}"### acl_rule\nbackend $NAME\t# acl_rule\n\tmode http\t# acl_rule\n\tbalance source\t# acl_rule\n\tcookie SESSION_COOKIE insert indirect nocache\t#acl_rule\n\toption tcpka\t#acl_rule\n\toption forwardfor\t# acl_rule\n$STR"
+	STRING2=${STRING2}"### acl_rule\n\tacl $NAME hdr_dom(host) -i $HOST\t# acl_rule\n\tuse_backend $NAME if $NAME\t# acl_rule\n"
+done
+
+sed -r -i "/backend shaohy/a\\${STRING}" $CONFIG
+sed -r -i "/acl shaohy/a\\${STRING2}" $CONFIG
+
+}
+
+start() {
+	config
+	$COMMAND -c -q -f $CONFIG
+  if [ $? -ne 0 ]; then
+    echo "Errors found in configuration file, check it with '$BASENAME check'."
+    return 1
+  fi
+
+  echo -n "Starting $BASENAME: "
+  daemon $COMMAND -D -f $CONFIG -p /var/run/$BASENAME.pid
+  RETVAL=$?
+  echo
+  [ $RETVAL -eq 0 ] && touch /var/lock/subsys/$BASENAME
+  return $RETVAL
+}
+
+stop() {
+  echo -n "Shutting down $BASENAME: "
+  kill -9 `pidof $BASENAME`
+  RETVAL=$?
+  echo
+  [ $RETVAL -eq 0 ] && rm -f /var/lock/subsys/$BASENAME
+  [ $RETVAL -eq 0 ] && rm -f /var/run/$BASENAME.pid
+  return $RETVAL
+}
+
+restart() {
+  stop
+  start
+}
+
+reload() {
+  $COMMAND -c -q -f $CONFIG
+  if [ $? -ne 0 ]; then
+    echo "Errors found in configuration file, check it with '$BASENAME check'."
+    return 1
+  fi
+  $COMMAND -D -f  $CONFIG -p /var/run/$BASENAME.pid -sf $(cat /var/run/$BASENAME.pid)
+}
+
+check() {
+	$COMMAND -c -q -V -f $CONFIG
+}
+
+rhstatus() {
+  status $BASENAME
+}
+
+condrestart() {
+  [ -e /var/lock/subsys/$BASENAME ] && restart || :
+}
+
+# See how we were called.
+case "$1" in
+  start)
+    start
+    ;;
+  stop)
+    stop
+    ;;
+  restart)
+    restart
+    ;;
+  reload)
+    reload
+    ;;
+  config)
+    config
+    ;;
+  condrestart)
+    condrestart
+    ;;
+  status)
+    rhstatus
+    ;;
+  check)
+    check
+    ;;
+  *)
+    echo $"Usage: $BASENAME {start|stop|restart|reload|config|condrestart|status|check}"
+    exit 1
+esac
+ 
+exit $?
+

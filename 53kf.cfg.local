@@ -1,0 +1,12 @@
+### VARNISH processes defination
+VARNISH_DAEMON=""
+VARNISH_MEMORY="malloc,2500M"
+
+### VARNISH or Nginx Proxy defination
+PROXY_PORT="80"
+
+#   ip:port:weight & ip2:port:weight
+PROXY_HOST="
+yashun.net@192.168.122.10:80&192.168.122.20:80@yashun|www
+hehebuy.com@127.0.0.1:81@w_hhb_com@www|tuan|user
+"

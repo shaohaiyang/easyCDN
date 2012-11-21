@@ -1,0 +1,250 @@
+#!/bin/bash
+# chkconfig: 3 71 71 
+# description: Varnish is a high-performance web proxy server.
+#              It has a lot of features, but it's not for everyone.
+# processname: varnish
+# pidfile: /var/run/varnish.pid
+
+# Copyright by Shaohaiyang at 53kf inc.
+# Contact email: shaohaiyang@gmail.com
+# added by geminis 2010/11/05
+[ -s /etc/53kf.cfg ] && source /etc/53kf.cfg
+
+if [ -z $VARNISH_DAEMON ];then
+        VARNISH_DAEMON=`grep -c processor /proc/cpuinfo`
+fi
+
+THREAD_POOL=$(($VARNISH_DAEMON*1))
+THREAD_POOL_MIN=$((800/$VARNISH_DAEMON))
+THREAD_POOL_MAX=$(($VARNISH_DAEMON*200))
+WORKER_POOL_MAX=$(($VARNISH_DAEMON*200))
+
+ulimit -S -c 0
+ulimit -n 65535
+ulimit -s 256
+ulimit -f unlimited
+ulimit -u unlimited
+ulimit -HSl 1048576
+
+VARNISH=/opt/varnish
+varnishd=$VARNISH/sbin/varnishd
+varnishadm=$VARNISH/bin/varnishadm
+varnish_config=$VARNISH/etc/default.vcl
+varnish_cache=$VARNISH/cache
+varnish_link=$VARNISH/var/varnish
+varnish_pid=/var/run/varnish.pid
+varnish_log=/var/log/varnish.log
+TMP="/tmp/.varnish.temp"
+
+LOG_ENABLE="0"
+HOSTPORT="127.0.0.1:3500"
+
+RETVAL=0
+prog="varnish"
+
+#grep -w "varnish" /etc/53kf.cfg > $ProxyList
+
+# Source function library.
+. /etc/rc.d/init.d/functions
+
+# Source networking configuration.
+. /etc/sysconfig/network
+
+# Check that networking is up.
+[ ${NETWORKING} = "no" ] && exit 0
+
+[ -x $varnishd ] || exit 0
+
+rm -rf $varnish_link/*
+ln -snf $varnish_cache $varnish_link/`hostname`
+
+                #\t.probe={\t\t\t# ProxyList\n
+                #\t\t.url=\"/alive.php\";\t# ProxyList\n
+                #\t\t.timeout=60s;\t\t# ProxyList\n
+                #\t\t.interval=300s;\t\t# ProxyList\n
+                #\t\t.window=10;\t\t# ProxyList\n
+                #\t\t.threshold=8;\t\t# ProxyList\n
+                #\t\t}\t\t\t# ProxyList\n
+
+config() {
+  if [ ! -z "$PROXY_HOST" ];then
+    for LINE in $PROXY_HOST;do
+	echo "$LINE" |grep -q ^#
+	[ $? = 0 ] && continue
+
+        DOMAIN=`echo "$LINE"|awk -F@ '{print $1}'`
+	HOST=`echo "h_"$DOMAIN|sed -r -e 's#\.#_#g' -e 's#\-#_#g'`
+        IPADDR=`echo "$LINE"|awk -F@ '{print $2}'|sed -r 's#&# #g'`
+        NAME=`echo "$LINE"|awk -F@ '{print $3}'`
+	PREFIX=`echo "$LINE"|awk -F@ '{print $4}'`
+	[ -z $PREFIX ] && PREFIX="www"
+	j=0
+	
+	STRING3="director $NAME client {\t\t\t# ProxyList\n"
+	for SRV in $IPADDR;do
+		IP=`echo $SRV|awk -F: '{print $1}'`
+		PORT=`echo $SRV|awk -F: '{print $2}'`
+        	WEIGHT=`echo $SRV|awk -F: '{print $3}'`
+		[ -z $WEIGHT ] && WEIGHT=3
+		[ -z $PORT ] && PORT=80
+
+		((j++))
+		STRING="backend ${HOST}_$j {\t\t\t# ProxyList\n
+		\t.host=\"$IP\";\t\t# ProxyList\n
+		\t.port=\"$PORT\";\t\t\t# ProxyList\n
+		\t.connect_timeout=300s;\t\t# ProxyList\n
+		\t.first_byte_timeout=300s;\t# ProxyList\n
+		\t.between_bytes_timeout=300s;\t# ProxyList\n
+		}\t\t\t\t\t# ProxyList\n"
+		echo -en $STRING >> $TMP
+
+                STRING3=$STRING3"\t{ .backend=${HOST}_$j; .weight=$WEIGHT;}\t# ProxyList\n"
+	done
+
+	STRING2="\tif (req.http.host~\"^($PREFIX).?$DOMAIN\$\"){\t\t\t# ProxyList\n
+	\t\tset req.backend=$NAME;\t\t\t\t# ProxyList\n
+	\t\tif (req.request != \"GET\" && req.request != \"HEAD\") {\t# ProxyList\n
+	\t\t\treturn (pipe);\t\t\t\t# ProxyList\n
+	\t\t}\t\t\t\t\t\t# ProxyList\n
+	\t\tif(req.url ~ \"\.(php|jsp)($|\?)\") {\t\t\t# ProxyList\n
+	\t\t\treturn (pass);\t\t\t\t# ProxyList\n
+	\t\t}\t\t\t\t\t\t# ProxyList\n
+	\t\telse {\t\t\t\t\t\t# ProxyList\n
+	\t\t\treturn (lookup);\t\t\t# ProxyList\n
+	\t\t}\t\t\t\t\t\t# ProxyList\n
+	\t}\t\t\t\t\t\t\t# ProxyList\n"
+	echo -en $STRING2 >> $TMP.a
+
+	STRING3="$STRING3}\t\t\t\t\t# ProxyList\n"
+	echo -en $STRING3 >> $TMP.g
+    done 
+
+    if [ ! -z "$PROXY_FORWARD" ];then
+        STRING=""
+        for LINE in $PROXY_FORWARD;do
+                echo "$LINE" |grep -q ^#
+                [ $? = 0 ] && continue
+
+                F_HOST=`echo $LINE|cut -d@ -f1`
+                F_IP=`echo $LINE|cut -d@ -f2`
+                F_PORT=`echo $LINE|cut -d@ -f3`
+                STRING="backend $F_HOST {\t\t\t\t# ProxyList\n
+                        \t.host=\"$F_IP\";\t\t# ProxyList\n
+                        \t.port=\"$F_PORT\";\t\t\t# ProxyList\n
+                        }\t\t\t\t\t# ProxyList\n"
+                echo -en $STRING >> $TMP.p
+        done
+    fi
+
+    sed -r -i "/ProxyList/d" $varnish_config
+    sed -r -i "/Default backend/r $TMP.p" $varnish_config
+    sed -r -i "/Default backend/r $TMP.g" $varnish_config
+    sed -r -i "/Default backend/r $TMP" $varnish_config
+    sed -r -i "/Added by geminis/r $TMP.a" $varnish_config
+
+    rm -rf $TMP.*
+    rm -rf $TMP
+else
+    echo "proxylist is empty or not exist."
+fi
+}
+
+# Start varnish daemons functions.
+start() {
+  echo "1" > /proc/sys/net/ipv4/tcp_tw_reuse	#peformance tunning
+
+if [ -e $varnish_pid ];then
+   echo "varnish already running...."
+   exit 1
+fi
+   config
+   echo -n $"Starting $prog: "
+   daemon $varnishd -f ${varnish_config} -n $varnish_cache -s $VARNISH_MEMORY \
+        -a 127.0.0.1:88 -g nobody -u nobody -T ${HOSTPORT} \
+        -w $THREAD_POOL_MIN,$WORKER_POOL_MAX,$THREAD_POOL_MIN \
+        -p thread_pools=$THREAD_POOL -p thread_pool_min=$THREAD_POOL_MIN -p thread_pool_max=$THREAD_POOL_MAX \
+        -p thread_pool_add_delay=2 -p cli_timeout=30 -p connect_timeout=600 -p session_linger=50/150/200 \
+	-p lru_interval=1800 -p sess_timeout=15 \
+        -p http_max_hdr=2048 -p http_req_hdr_len=20480 -p http_resp_hdr_len=20480 \
+        -p listen_depth=2048 -h classic,500009
+   RETVAL=$?
+   echo
+   [ $RETVAL = 0 ] && touch /var/lock/subsys/varnish
+   [ $LOG_ENABLE = "1" ] && $VARNISH/bin/varnishncsa -n $varnish_cache -w $varnish_log &
+   return $RETVAL
+
+}
+
+
+# Stop varnish daemons functions.
+stop() {
+	echo "1" > /proc/sys/net/ipv4/tcp_tw_reuse	#peformance tunning
+        echo -n $"Stopping $prog: "
+        killproc varnishncsa
+        killproc $varnishd
+        RETVAL=$?
+        echo
+        [ $RETVAL = 0 ] && rm -f /var/lock/subsys/varnish /var/run/varnish.pid
+}
+
+
+# reload varnish service functions.
+reload() {
+    echo -n $"Reloading $prog: "
+    #killproc $varnishd -HUP
+NOW=`date +%s`
+$varnishadm -T $HOSTPORT vcl.load file{$varnish_config}time{$NOW} $varnish_config || error
+$varnishadm -T $HOSTPORT vcl.use file{$varnish_config}time{$NOW} || error
+echo Current configs:
+$varnishadm -T $HOSTPORT vcl.list
+    RETVAL=$?
+    echo
+}
+
+logrestart() {
+        ps auxf|grep varnishncsa|grep -v grep
+        [ $? = 1 ] &&  [ $LOG_ENABLE = "1" ] && $VARNISH/bin/varnishncsa -n $varnish_cache -w $varnish_log &
+}
+
+error()
+{
+echo 1>&2 "Failed to reload $varnish_config."
+exit 1
+}
+
+# See how we were called.
+case "$1" in
+start)
+        start
+        ;;
+
+stop)
+        stop
+        ;;
+
+reload)
+        reload
+        ;;
+
+restart)
+        stop
+        start
+        ;;
+config)
+	config
+	;;
+status)
+        status $prog
+        RETVAL=$?
+        ;;
+logrestart)
+        logrestart
+        RETVAL=$?
+        ;;
+*)
+        echo "Usage: $prog {start|stop|restart|reload|config|status|help}"
+        exit 1
+esac
+
+exit $RETVAL
+
