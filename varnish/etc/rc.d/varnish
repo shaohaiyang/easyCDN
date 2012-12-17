@@ -65,7 +65,6 @@ ln -snf $varnish_cache $varnish_link/`hostname`
                 #\t\t.window=10;\t\t# ProxyList\n
                 #\t\t.threshold=8;\t\t# ProxyList\n
                 #\t\t}\t\t\t# ProxyList\n
-
 config() {
   if [ ! -z "$PROXY_HOST" ];then
     for LINE in $PROXY_HOST;do

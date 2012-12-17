@@ -1,6 +1,6 @@
 #!/bin/sh
 VARNISH_DIR="/opt/varnish"
-BLACKLIST=$VARNISH_DIR"/blacklist"
+BLACKLIST=$VARNISH_DIR"/etc/blacklist"
 VARNISH_CONF=$VARNISH_DIR"/etc/default.vcl"
 REASON="no reason"
 TMP="/tmp/.varnish.tmp"
