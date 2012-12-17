@@ -15,13 +15,13 @@ if [ -s $BLACKLIST ];then
                 bad=`echo "$bad"|awk '{print $2}'`
                 case $mark in
                         ref)
-                                LINE="\t\t|| req.http.referer ~ \"$bad\" \t\t# blacklist\n";;
+                                LINE="\t\t|| req.http.referer ~ \"(?i)$bad\" \t\t# blacklist\n";;
                         ip)
                                 LINE="\t\t|| client.ip == \"$bad\" \t\t# blacklist\n";;
                         agt)
-                                LINE="\t\t|| req.http.user-agent ~ \"$bad\" \t# blacklist\n";;
+                                LINE="\t\t|| req.http.user-agent ~ \"(?i)$bad\" \t# blacklist\n";;
                         url)
-                                LINE="\t\t|| req.url ~ \"$bad\" \t\t\t# blacklist\n";;
+                                LINE="\t\t|| req.url ~ \"(?i)$bad\" \t\t\t# blacklist\n";;
                 esac
                 STRING=$STRING$LINE
         done < $BLACKLIST

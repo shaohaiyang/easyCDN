@@ -106,9 +106,10 @@ config() {
 	\t\tif (req.request != \"GET\" && req.request != \"HEAD\") {\t# ProxyList\n
 	\t\t\treturn (pipe);\t\t\t\t# ProxyList\n
 	\t\t}\t\t\t\t\t\t# ProxyList\n
-	\t\tif(req.url ~ \"\.(php|jsp)($|\?)\") {\t\t\t# ProxyList\n
+	\t\tif(req.url ~ \"\.(?i)(php)($|\?)\") {\t\t\t# ProxyList\n
 	\t\t\treturn (pass);\t\t\t\t# ProxyList\n
 	\t\t}\t\t\t\t\t\t# ProxyList\n
+	\t\t#if(req.url ~ \"\.(?i)(txt|ico|gif|bmp|png|psd|jpg|jpeg|tiff|wav|js|css|htm|html)\") {\t# ProxyList\n
 	\t\telse {\t\t\t\t\t\t# ProxyList\n
 	\t\t\treturn (lookup);\t\t\t# ProxyList\n
 	\t\t}\t\t\t\t\t\t# ProxyList\n
