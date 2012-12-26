@@ -71,10 +71,10 @@ config() {
 	echo "$LINE" |grep -q ^#
 	[ $? = 0 ] && continue
 
-        DOMAIN=`echo "$LINE"|awk -F@ '{print $1}'`
+	DOMAIN=`echo "$LINE"|awk -F@ '{print $1}'`
 	HOST=`echo "h_"$DOMAIN|sed -r -e 's#\.#_#g' -e 's#\-#_#g'`
-        IPADDR=`echo "$LINE"|awk -F@ '{print $2}'|sed -r 's#&# #g'`
-        NAME=`echo "$LINE"|awk -F@ '{print $3}'`
+	IPADDR=`echo "$LINE"|awk -F@ '{print $2}'|sed -r 's#&# #g'`
+	NAME=`echo "$LINE"|awk -F@ '{print $3}'`
 	PREFIX=`echo "$LINE"|awk -F@ '{print $4}'`
 	[ -z $PREFIX ] && PREFIX="www"
 	j=0
@@ -83,7 +83,7 @@ config() {
 	for SRV in $IPADDR;do
 		IP=`echo $SRV|awk -F: '{print $1}'`
 		PORT=`echo $SRV|awk -F: '{print $2}'`
-        	WEIGHT=`echo $SRV|awk -F: '{print $3}'`
+		WEIGHT=`echo $SRV|awk -F: '{print $3}'`
 		[ -z $WEIGHT ] && WEIGHT=3
 		[ -z $PORT ] && PORT=80
 
@@ -97,7 +97,7 @@ config() {
 		}\t\t\t\t\t# ProxyList\n"
 		echo -en $STRING >> $TMP
 
-                STRING3=$STRING3"\t{ .backend=${HOST}_$j; .weight=$WEIGHT;}\t# ProxyList\n"
+		STRING3=$STRING3"\t{ .backend=${HOST}_$j; .weight=$WEIGHT;}\t# ProxyList\n"
 	done
 
 	STRING2="\tif (req.http.host~\"^($PREFIX).?$DOMAIN\$\"){\t\t\t# ProxyList\n

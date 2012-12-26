@@ -57,7 +57,7 @@ for i in $PROXY_HOST;do
 
 	HOST=`echo $i|cut -d@ -f1`
 	SRV=`echo $i|cut -d@ -f2`
-        NAME=`echo $i|cut -d@ -f3`
+	NAME=`echo $i|cut -d@ -f3`
 
 	SRV_POOL=`echo $SRV|sed 's:&: :g'`
 
